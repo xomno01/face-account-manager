@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Knowledge Face Password Manager</title>
+    <!-- Tải Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tải thư viện icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tải thư viện face-api.js -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- Tải thư viện mã hóa CryptoJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <style>
+        /* Sử dụng font Inter cho toàn bộ trang */
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        main {
+            flex-grow: 1;
+        }
+        /* Hiệu ứng chuyển động cho thông báo */
+        #notification {
+            transition: opacity 0.5s, transform 0.5s;
+        }
+        /* Ẩn/hiện các màn hình */
+        .hidden {
+            display: none;
+        }
+        /* Kiểu cho video camera */
+        #faceVideo {
+            transform: scaleX(-1); /* Lật video để giống như gương */
+            object-fit: cover;
+        }
+        /* Spinner loading */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #ffffff;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+    <!-- Màn hình Loading ban đầu -->
+    <div id="initial-loading-screen" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex flex-col items-center justify-center z-50 p-4">
+        <div id="loading-content">
+            <div class="spinner mx-auto"></div>
+            <p class="text-white mt-4 text-center">Đang tải mô hình nhận diện...</p>
+        </div>
+    </div>
+
+    <main>
+        <!-- Màn hình Xác thực bằng Khuôn mặt -->
+        <div id="auth-screen" class="container mx-auto p-4 flex items-center justify-center min-h-full">
+            <div class="w-full max-w-md text-center">
+                <div class="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg">
+                    <i class="fas fa-user-shield text-6xl text-indigo-500 mb-4"></i>
+                    <h1 class="text-2xl font-bold text-center text-gray-900 dark:text-white mb-2">Zero-Knowledge Face Password Manager</h1>
+                    <p class="text-gray-600 dark:text-gray-400 mb-8">Đăng nhập hoặc đăng ký an toàn không cần mật khẩu.</p>
+                    <div class="space-y-4">
+                        <button id="login-face-btn" class="w-full px-6 py-3 text-white font-semibold bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 flex items-center justify-center space-x-2">
+                            <i class="fas fa-camera"></i>
+                            <span>Đăng Nhập bằng Khuôn mặt</span>
+                        </button>
+                        <button id="register-face-btn" class="w-full px-6 py-3 text-indigo-700 dark:text-indigo-300 font-semibold bg-indigo-100 dark:bg-gray-700 rounded-md hover:bg-indigo-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 flex items-center justify-center space-x-2">
+                             <i class="fas fa-user-plus"></i>
+                            <span>Đăng Ký Khuôn mặt Mới</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Phần giới thiệu tính năng và công nghệ -->
+                <div class="mt-8 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg text-left">
+                    <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Tính năng & Bảo mật</h2>
+                    <ul class="space-y-3 text-gray-700 dark:text-gray-300">
+                        <li class="flex items-start">
+                            <i class="fas fa-check-circle text-green-500 mt-1 mr-2"></i>
+                            <span><strong class="font-semibold">Zero-Knowledge (Không có kiến thức):</strong> Nhà phát triển (tức là tôi) cũng không thể xem được dữ liệu của bạn.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <i class="fas fa-check-circle text-green-500 mt-1 mr-2"></i>
+                            <span><strong class="font-semibold">Mã hóa Phía Người dùng:</strong> Toàn bộ dữ liệu được mã hóa và giải mã ngay trên thiết bị của bạn, không bao giờ gửi dữ liệu gốc lên máy chủ.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <i class="fas fa-check-circle text-green-500 mt-1 mr-2"></i>
+                            <span><strong class="font-semibold">Khóa là Khuôn mặt của Bạn:</strong> Khóa mã hóa được tạo ra từ chính khuôn mặt bạn và không được lưu ở bất cứ đâu, đảm bảo chỉ bạn mới có thể truy cập.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-exclamation-triangle text-yellow-500 mt-1 mr-2"></i>
+                            <span><strong class="font-semibold">Mất dữ liệu vĩnh viễn:</strong> Nếu không thể nhận dạng khuôn mặt, dữ liệu sẽ không thể phục hồi. Đây là sự đánh đổi cho bảo mật tuyệt đối.</span>
+                        </li>
+                    </ul>
+
+                    <h2 class="text-xl font-bold text-gray-900 dark:text-white mt-6 mb-4">Công nghệ cốt lõi</h2>
+                     <div class="text-gray-700 dark:text-gray-300">
+                        <strong class="font-semibold text-lg">CryptoJS</strong>
+                        <ul class="list-disc list-inside mt-2 space-y-2 pl-2 text-sm">
+                            <li>Thư viện mã hóa mạnh mẽ, cung cấp thuật toán AES (Advanced Encryption Standard) đã được kiểm chứng.</li>
+                            <li>Giúp mã hóa và giải mã toàn bộ dữ liệu của bạn ngay trên trình duyệt một cách an toàn.</li>
+                            <li>Là nền tảng cho mô hình "Zero-Knowledge", đảm bảo chỉ bạn mới có thể đọc được thông tin của mình.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Màn hình ứng dụng chính -->
+        <div id="app-screen" class="hidden container mx-auto p-4 md:p-8 max-w-4xl">
+            <header class="flex justify-between items-center mb-8">
+                <div>
+                     <h1 class="text-3xl md:text-4xl font-bold text-indigo-600 dark:text-indigo-400">Password Manager</h1>
+                     <p class="text-gray-600 dark:text-gray-400 mt-2">Dữ liệu của bạn được mã hóa và chỉ bạn mới có thể xem.</p>
+                </div>
+                <button id="logout-btn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700">Đăng Xuất</button>
+            </header>
+
+            <main>
+                <!-- Form để thêm/sửa tài khoản -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8">
+                    <h2 id="form-title" class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Thêm tài khoản mới</h2>
+                    <form id="account-form">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="website" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tên trang web/Dịch vụ</label>
+                                <input type="text" id="website" required class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ví dụ: google.com">
+                            </div>
+                            <div>
+                                <label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tên đăng nhập/Email</label>
+                                <input type="text" id="username" required class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="ví dụ: user@example.com">
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mật khẩu</label>
+                            <input type="password" id="password" required class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nhập mật khẩu an toàn">
+                        </div>
+                        <div class="mt-6 flex items-center justify-end space-x-4">
+                             <button type="button" id="cancel-edit-btn" class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 hidden">Hủy</button>
+                            <button type="submit" id="submit-btn" class="px-6 py-2 text-white font-semibold bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Thêm Tài Khoản
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Danh sách tài khoản -->
+                <div>
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Danh sách tài khoản</h2>
+                    <div id="accounts-list" class="grid grid-cols-1 gap-4">
+                         <p id="loading-message" class="text-center text-gray-500">Đang tải dữ liệu...</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </main>
+
+    <footer class="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
+        Được tạo bởi 
+        <a href="https://facebook.com/luu.van.621914" target="_blank" rel="noopener noreferrer" class="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+            Lưu Vân
+        </a>
+    </footer>
+
+    <!-- Thông báo (Toast) -->
+    <div id="notification" class="fixed bottom-5 right-5 bg-green-500 text-white px-4 py-2 rounded-lg shadow-md opacity-0 transform translate-y-2 z-50">
+        <p id="notification-message"></p>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import các hàm cần thiết từ Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, addDoc, onSnapshot, updateDoc, deleteDoc, query, setDoc, getDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Cấu hình Firebase của bạn
+        const firebaseConfig = {
+            apiKey: "AIzaSyBLD5xu75wKFStNvALDBwwF2RyaSHJqjHU",
+            authDomain: "facesecurity-b6b52.firebaseapp.com",
+            projectId: "facesecurity-b6b52",
+            storageBucket: "facesecurity-b6b52.appspot.com",
+            messagingSenderId: "841132247242",
+            appId: "1:841132247242:web:7300a9b370ebc155f68c33",
+            measurementId: "G-SG626XR1JV"
+        };
+        const appId = 'face-password-manager'; // Đặt một ID cố định cho ứng dụng
+
+        // Khởi tạo Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        setLogLevel('debug');
+
+        // --- Lấy các phần tử DOM ---
+        const initialLoadingScreen = document.getElementById('initial-loading-screen');
+        const loadingContent = document.getElementById('loading-content');
+        const authScreen = document.getElementById('auth-screen');
+        const appScreen = document.getElementById('app-screen');
+        const loginFaceBtn = document.getElementById('login-face-btn');
+        const registerFaceBtn = document.getElementById('register-face-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const accountForm = document.getElementById('account-form');
+        const websiteInput = document.getElementById('website');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const accountsList = document.getElementById('accounts-list');
+        const formTitle = document.getElementById('form-title');
+        const submitBtn = document.getElementById('submit-btn');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+
+        // --- Biến toàn cục ---
+        let currentUserId = null;
+        let currentEditId = null;
+        let accountsCollectionRef = null;
+        let unsubscribeSnapshot = null;
+        let encryptionKey = null; // Khóa mã hóa bí mật
+
+        // --- Hàm Mã hóa ---
+        function generateKeyFromDescriptor(descriptor) {
+            // Sử dụng chuỗi JSON của descriptor làm "mật khẩu" để tạo khóa
+            return JSON.stringify(Array.from(descriptor));
+        }
+
+        function encryptData(data, key) {
+            return CryptoJS.AES.encrypt(JSON.stringify(data), key).toString();
+        }
+
+        function decryptData(encryptedData, key) {
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedData, key);
+                const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+                if (!decryptedString) {
+                    throw new Error("Decryption failed: empty result");
+                }
+                return JSON.parse(decryptedString);
+            } catch (e) {
+                console.error("Lỗi giải mã:", e);
+                return null; // Trả về null nếu không giải mã được
+            }
+        }
+
+
+        // Hàm khởi tạo chính
+        async function main() {
+            try {
+                await signInAnonymously(auth);
+            } catch (error) {
+                if (error.code === 'auth/configuration-not-found') {
+                    loadingContent.innerHTML = `<div class="text-center text-white p-4"><i class="fas fa-exclamation-triangle text-4xl text-yellow-400 mb-4"></i><h3 class="text-lg font-bold mb-2">Lỗi Cấu Hình Xác Thực</h3><p class="text-sm">Đăng nhập ẩn danh (Anonymous) chưa được bật trong dự án Firebase của bạn.</p><p class="text-sm mt-2 font-semibold">Vui lòng truy cập Bảng điều khiển Firebase -> Authentication -> Sign-in method và bật nhà cung cấp 'Anonymous'.</p></div>`;
+                } else {
+                    loadingContent.innerHTML = '<p class="text-white mt-4 text-red-500">Không thể kết nối đến máy chủ. Vui lòng làm mới trang.</p>';
+                }
+                return;
+            }
+            await loadFaceApiModels();
+        }
+        main();
+
+
+        // --- Tải mô hình FaceAPI ---
+        async function loadFaceApiModels() {
+            const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL)
+                ]);
+                initialLoadingScreen.classList.add('hidden');
+            } catch (error) {
+                loadingContent.innerHTML = '<p class="text-white mt-4 text-red-500">Không thể tải mô hình nhận diện. Vui lòng làm mới trang.</p>';
+            }
+        }
+        
+        // --- Xử lý Xác thực bằng Khuôn mặt ---
+        loginFaceBtn.addEventListener('click', async () => {
+            showNotification("Đang tìm kiếm khuôn mặt của bạn...");
+            const descriptor = await getFaceDescriptorFromCamera("Nhìn thẳng vào camera để đăng nhập");
+            if (!descriptor) return;
+
+            const faceUsersRef = collection(db, 'artifacts', appId, 'public', 'data', 'face_users');
+            const querySnapshot = await getDocs(faceUsersRef);
+            
+            if (querySnapshot.empty) {
+                showNotification("Không có người dùng nào được đăng ký.", true);
+                return;
+            }
+
+            const labeledFaceDescriptors = querySnapshot.docs.map(doc => {
+                const data = doc.data();
+                return new faceapi.LabeledFaceDescriptors(
+                    data.userId,
+                    [new Float32Array(data.descriptor)]
+                );
+            });
+
+            const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.5);
+            const bestMatch = faceMatcher.findBestMatch(descriptor);
+
+            if (bestMatch.label !== 'unknown') {
+                currentUserId = bestMatch.label;
+                encryptionKey = generateKeyFromDescriptor(descriptor); // Tạo khóa bí mật
+                showNotification(`Đăng nhập thành công!`);
+                switchToAppScreen();
+            } else {
+                showNotification("Không nhận dạng được khuôn mặt. Vui lòng thử lại hoặc đăng ký.", true);
+            }
+        });
+
+        registerFaceBtn.addEventListener('click', async () => {
+            const descriptor1 = await getFaceDescriptorFromCamera("Lần 1: Nhìn thẳng vào camera.");
+            if (!descriptor1) {
+                showNotification("Hủy đăng ký.", true);
+                return;
+            }
+            showNotification("Thành công! Vui lòng quét lại để xác nhận.");
+
+            const descriptor2 = await getFaceDescriptorFromCamera("Lần 2: Nhìn lại vào camera để xác nhận.");
+            if (!descriptor2) {
+                showNotification("Hủy đăng ký.", true);
+                return;
+            }
+
+            const distance = faceapi.euclideanDistance(descriptor1, descriptor2);
+            if (distance < 0.1) {
+                const newUserId = crypto.randomUUID();
+                const newUserDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'face_users', newUserId);
+                
+                try {
+                    // Chỉ lưu descriptor, không lưu khóa
+                    await setDoc(newUserDocRef, {
+                        userId: newUserId,
+                        descriptor: Array.from(descriptor1) 
+                    });
+                    showNotification("Đăng ký thành công! Đang đăng nhập...");
+                    currentUserId = newUserId;
+                    encryptionKey = generateKeyFromDescriptor(descriptor1); // Tạo khóa bí mật
+                    switchToAppScreen();
+                } catch (error) {
+                    console.error("Lỗi lưu dữ liệu:", error);
+                    showNotification("Lỗi khi đăng ký. Vui lòng thử lại.", true);
+                }
+            } else {
+                showNotification("Hai lần quét không khớp. Vui lòng thử lại.", true);
+            }
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            currentUserId = null;
+            encryptionKey = null; // Xóa khóa bí mật
+            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            accountsList.innerHTML = '';
+            switchToAuthScreen();
+            showNotification("Đã đăng xuất.");
+        });
+
+        function switchToAppScreen() {
+            authScreen.classList.add('hidden');
+            appScreen.classList.remove('hidden');
+            setupRealtimeListener();
+        }
+
+        function switchToAuthScreen() {
+            appScreen.classList.add('hidden');
+            authScreen.classList.remove('hidden');
+        }
+
+        // --- Hàm tiện ích cho Face API và Modal ---
+        function showNotification(message, isError = false) {
+            const notification = document.getElementById('notification');
+            const notificationMessage = document.getElementById('notification-message');
+            
+            notificationMessage.textContent = message;
+            notification.className = `fixed bottom-5 right-5 text-white px-4 py-2 rounded-lg shadow-md opacity-100 transform translate-y-0 z-50 ${isError ? 'bg-red-500' : 'bg-green-500'}`;
+
+            setTimeout(() => {
+                notification.className = notification.className.replace('opacity-100 transform translate-y-0', 'opacity-0 transform translate-y-2');
+            }, 4000);
+        }
+
+        function getFaceDescriptorFromCamera(message) {
+            return new Promise(resolve => {
+                const modalOverlay = document.createElement('div');
+                modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-40';
+                
+                modalOverlay.innerHTML = `
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm text-center">
+                        <p class="text-gray-800 dark:text-gray-200 mb-4 font-semibold">${message}</p>
+                        <div class="relative w-64 h-48 mx-auto bg-gray-900 rounded-md overflow-hidden">
+                           <video id="faceVideo" class="w-full h-full" autoplay muted playsinline></video>
+                           <div id="face-spinner" class="spinner absolute top-1/2 left-1/2 -mt-4 -ml-4 hidden"></div>
+                        </div>
+                        <p id="face-message" class="text-sm text-yellow-500 mt-2 h-5"></p>
+                        <button id="cancel-face-scan" class="mt-4 px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-400">Hủy</button>
+                    </div>
+                `;
+                document.body.appendChild(modalOverlay);
+
+                const video = document.getElementById('faceVideo');
+                const cancelBtn = document.getElementById('cancel-face-scan');
+                const faceMessage = document.getElementById('face-message');
+                const spinner = document.getElementById('face-spinner');
+                let stream = null;
+                let detectionInterval = null;
+
+                function cleanup() {
+                    clearInterval(detectionInterval);
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                    if (modalOverlay.parentNode) {
+                        document.body.removeChild(modalOverlay);
+                    }
+                }
+
+                cancelBtn.onclick = () => {
+                    cleanup();
+                    resolve(null);
+                };
+                
+                navigator.mediaDevices.getUserMedia({ video: {} })
+                    .then(videoStream => {
+                        stream = videoStream;
+                        video.srcObject = stream;
+                        video.onloadedmetadata = () => {
+                            detectionInterval = setInterval(async () => {
+                                const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                                if (detections) {
+                                    faceMessage.textContent = "Đã nhận diện! Đang xử lý...";
+                                    spinner.classList.remove('hidden');
+                                    cleanup();
+                                    resolve(detections.descriptor);
+                                } else {
+                                    faceMessage.textContent = "Không tìm thấy khuôn mặt...";
+                                }
+                            }, 300);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Lỗi camera: ", err);
+                        showNotification("Không thể truy cập camera. Vui lòng cấp quyền.", true);
+                        cleanup();
+                        resolve(null);
+                    });
+            });
+        }
+
+        async function verifyFace() {
+            // Thay vì so sánh descriptor, chúng ta chỉ cần quét lại để tái tạo khóa
+            const descriptor = await getFaceDescriptorFromCamera("Xác nhận hành động bằng khuôn mặt của bạn.");
+            if (descriptor) {
+                const newKey = generateKeyFromDescriptor(descriptor);
+                if (newKey === encryptionKey) {
+                    showNotification("Xác nhận khuôn mặt thành công!");
+                    return true;
+                } else {
+                    showNotification("Khuôn mặt không khớp.", true);
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        // --- Quản lý Tài khoản (CRUD) ---
+        function renderAccount(doc) {
+            const encryptedAccount = doc.data();
+            const accountId = doc.id;
+
+            // Giải mã dữ liệu
+            const account = decryptData(encryptedAccount.data, encryptionKey);
+
+            if (!account) {
+                showNotification(`Không thể giải mã dữ liệu cho một tài khoản. Khóa có thể đã thay đổi.`, true);
+                return; // Bỏ qua nếu không giải mã được
+            }
+
+            const card = document.createElement('div');
+            card.className = 'bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col md:flex-row items-start md:items-center justify-between';
+            card.setAttribute('data-id', accountId);
+
+            card.innerHTML = `
+                <div class="flex-grow mb-4 md:mb-0">
+                    <h3 class="text-lg font-bold text-indigo-600 dark:text-indigo-400">${account.website}</h3>
+                    <div class="flex items-center mt-2">
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mr-2"><i class="fas fa-user mr-1"></i> ${account.username}</p>
+                        <button data-action="copy-username" data-value="${account.username}" class="text-gray-400 hover:text-indigo-500 text-xs"><i class="fas fa-copy"></i></button>
+                    </div>
+                    <div class="flex items-center mt-1">
+                        <input type="password" value="${account.password}" readonly class="password-field text-sm text-gray-600 dark:text-gray-400 bg-transparent border-none p-0 w-32 mr-2" />
+                        <button data-action="toggle-password" class="text-gray-400 hover:text-indigo-500 text-xs mr-2"><i class="fas fa-eye"></i></button>
+                        <button data-action="copy-password" data-value="${account.password}" class="text-gray-400 hover:text-indigo-500 text-xs"><i class="fas fa-copy"></i></button>
+                    </div>
+                </div>
+                <div class="flex space-x-2 self-start md:self-center">
+                    <button data-action="edit" class="px-3 py-1 text-sm text-white bg-yellow-500 rounded-md hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>
+                    <button data-action="delete" class="px-3 py-1 text-sm text-white bg-red-500 rounded-md hover:bg-red-600"><i class="fas fa-trash"></i></button>
+                </div>
+            `;
+            accountsList.appendChild(card);
+        }
+        
+        accountsList.addEventListener('click', async (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+
+            const action = target.dataset.action;
+            const card = target.closest('[data-id]');
+            const id = card.getAttribute('data-id');
+
+            if (action === 'delete') {
+                const confirmed = await verifyFace();
+                if (confirmed) {
+                    try {
+                        await deleteDoc(doc(accountsCollectionRef, id));
+                        showNotification('Xóa tài khoản thành công!');
+                    } catch (error) {
+                        showNotification('Có lỗi xảy ra khi xóa.', true);
+                    }
+                }
+            } else if (action === 'edit') {
+                 const confirmed = await verifyFace();
+                 if (confirmed) {
+                    const docRef = doc(accountsCollectionRef, id);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        const decryptedData = decryptData(docSnap.data().data, encryptionKey);
+                        if(decryptedData) {
+                            websiteInput.value = decryptedData.website;
+                            usernameInput.value = decryptedData.username;
+                            passwordInput.value = decryptedData.password;
+                            
+                            currentEditId = id;
+                            formTitle.textContent = 'Chỉnh sửa tài khoản';
+                            submitBtn.textContent = 'Cập nhật';
+                            cancelEditBtn.classList.remove('hidden');
+                            window.scrollTo(0, 0);
+                        }
+                    }
+                 }
+            } else if (action === 'toggle-password') {
+                const passwordField = card.querySelector('.password-field');
+                const icon = target.querySelector('i');
+                if (passwordField.type === 'password') {
+                    passwordField.type = 'text';
+                    icon.classList.replace('fa-eye', 'fa-eye-slash');
+                } else {
+                    passwordField.type = 'password';
+                    icon.classList.replace('fa-eye-slash', 'fa-eye');
+                }
+            } else if (action === 'copy-username' || action === 'copy-password') {
+                const valueToCopy = target.dataset.value;
+                try {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = valueToCopy;
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    showNotification(action === 'copy-username' ? 'Đã sao chép tên đăng nhập!' : 'Đã sao chép mật khẩu!');
+                } catch (err) {
+                    showNotification('Lỗi khi sao chép.', true);
+                }
+            }
+        });
+
+        function resetForm() {
+            accountForm.reset();
+            currentEditId = null;
+            formTitle.textContent = 'Thêm tài khoản mới';
+            submitBtn.textContent = 'Thêm Tài Khoản';
+            cancelEditBtn.classList.add('hidden');
+        }
+        
+        cancelEditBtn.addEventListener('click', resetForm);
+
+        accountForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUserId || !encryptionKey) {
+                showNotification('Lỗi xác thực hoặc thiếu khóa mã hóa.', true);
+                return;
+            }
+
+            const accountData = {
+                website: websiteInput.value,
+                username: usernameInput.value,
+                password: passwordInput.value,
+            };
+            
+            // Mã hóa dữ liệu trước khi lưu
+            const encryptedData = encryptData(accountData, encryptionKey);
+            const dataToSave = { data: encryptedData };
+
+            try {
+                if (currentEditId) {
+                    const docRef = doc(accountsCollectionRef, currentEditId);
+                    await updateDoc(docRef, dataToSave);
+                    showNotification('Cập nhật tài khoản thành công!');
+                } else {
+                    await addDoc(accountsCollectionRef, dataToSave);
+                    showNotification('Thêm tài khoản mới thành công!');
+                }
+                resetForm();
+            } catch (error) {
+                showNotification('Có lỗi xảy ra khi lưu.', true);
+            }
+        });
+
+        function setupRealtimeListener() {
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+            }
+            if (!currentUserId) return;
+
+            accountsCollectionRef = collection(db, 'artifacts', appId, 'users', currentUserId, 'accounts');
+            
+            unsubscribeSnapshot = onSnapshot(query(accountsCollectionRef), (snapshot) => {
+                accountsList.innerHTML = ''; 
+                if (snapshot.empty) {
+                    accountsList.innerHTML = '<p id="loading-message" class="text-center text-gray-500">Chưa có tài khoản nào. Hãy thêm một tài khoản mới!</p>';
+                } else {
+                    snapshot.docs.forEach(renderAccount);
+                }
+            }, (error) => {
+                accountsList.innerHTML = '<p id="loading-message" class="text-center text-red-500">Không thể tải dữ liệu. Vui lòng thử lại.</p>';
+            });
+        }
+    </script>
+</body>
+</html>
