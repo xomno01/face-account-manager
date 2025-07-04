@@ -227,7 +227,8 @@
         let accountsCollectionRef = null;
         let unsubscribeSnapshot = null;
         let encryptionKey = null; // Khóa mã hóa bí mật
-        let loggedInUserOriginalDescriptor = null; // FIX: Lưu descriptor gốc của người dùng đã đăng nhập
+        let loggedInUserOriginalDescriptor = null; 
+        let accountsCache = {}; // FIX: Cache để lưu dữ liệu tài khoản đã mã hóa
 
         // --- Hàm Mã hóa ---
         function generateKeyFromDescriptor(descriptor) {
@@ -315,7 +316,6 @@
             if (bestMatch.label !== 'unknown') {
                 currentUserId = bestMatch.label;
                 
-                // FIX: Lấy descriptor gốc từ LabeledFaceDescriptors để tạo khóa nhất quán
                 const matchedData = labeledFaceDescriptors.find(ld => ld.label === currentUserId);
                 if (matchedData) {
                     loggedInUserOriginalDescriptor = matchedData.descriptors[0];
@@ -356,7 +356,6 @@
                     });
                     showNotification("Đăng ký thành công! Đang đăng nhập...");
                     currentUserId = newUserId;
-                    // FIX: Lưu descriptor gốc và tạo khóa từ nó
                     loggedInUserOriginalDescriptor = descriptor1;
                     encryptionKey = generateKeyFromDescriptor(loggedInUserOriginalDescriptor);
                     switchToAppScreen();
@@ -372,7 +371,8 @@
         logoutBtn.addEventListener('click', () => {
             currentUserId = null;
             encryptionKey = null; 
-            loggedInUserOriginalDescriptor = null; // FIX: Xóa descriptor gốc khi đăng xuất
+            loggedInUserOriginalDescriptor = null; 
+            accountsCache = {}; // FIX: Xóa cache khi đăng xuất
             if (unsubscribeSnapshot) unsubscribeSnapshot();
             accountsList.innerHTML = '';
             switchToAuthScreen();
@@ -471,7 +471,6 @@
         }
 
         async function verifyFace() {
-            // FIX: So sánh với descriptor gốc thay vì so sánh khóa
             if (!loggedInUserOriginalDescriptor) {
                 showNotification("Lỗi xác thực. Vui lòng đăng nhập lại.", true);
                 return false;
@@ -549,10 +548,9 @@
             } else if (action === 'edit') {
                  const confirmed = await verifyFace();
                  if (confirmed) {
-                    const docRef = doc(accountsCollectionRef, id);
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const decryptedData = decryptData(docSnap.data().data, encryptionKey);
+                    const encryptedAccount = accountsCache[id]; // FIX: Lấy dữ liệu từ cache
+                    if (encryptedAccount) {
+                        const decryptedData = decryptData(encryptedAccount.data, encryptionKey);
                         if(decryptedData) {
                             websiteInput.value = decryptedData.website;
                             usernameInput.value = decryptedData.username;
@@ -563,7 +561,11 @@
                             submitBtn.textContent = 'Cập nhật';
                             cancelEditBtn.classList.remove('hidden');
                             window.scrollTo(0, 0);
+                        } else {
+                            showNotification("Lỗi giải mã dữ liệu từ cache.", true);
                         }
+                    } else {
+                        showNotification("Không tìm thấy tài khoản trong cache.", true);
                     }
                  }
             } else if (action === 'toggle-password') {
@@ -645,10 +647,15 @@
             
             unsubscribeSnapshot = onSnapshot(query(accountsCollectionRef), (snapshot) => {
                 accountsList.innerHTML = ''; 
+                const newCache = {}; // FIX: Tạo cache mới để xử lý xóa
+                snapshot.docs.forEach(doc => {
+                    newCache[doc.id] = doc.data(); // Lưu dữ liệu gốc vào cache
+                    renderAccount(doc);
+                });
+                accountsCache = newCache; // Cập nhật cache chính
+
                 if (snapshot.empty) {
                     accountsList.innerHTML = '<p id="loading-message" class="text-center text-gray-500">Chưa có tài khoản nào. Hãy thêm một tài khoản mới!</p>';
-                } else {
-                    snapshot.docs.forEach(renderAccount);
                 }
             }, (error) => {
                 accountsList.innerHTML = '<p id="loading-message" class="text-center text-red-500">Không thể tải dữ liệu. Vui lòng thử lại.</p>';
@@ -656,4 +663,4 @@
         }
     </script>
 </body>
-</ht
+</html>
