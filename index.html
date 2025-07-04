@@ -227,6 +227,7 @@
         let accountsCollectionRef = null;
         let unsubscribeSnapshot = null;
         let encryptionKey = null; // Khóa mã hóa bí mật
+        let loggedInUserOriginalDescriptor = null; // FIX: Lưu descriptor gốc của người dùng đã đăng nhập
 
         // --- Hàm Mã hóa ---
         function generateKeyFromDescriptor(descriptor) {
@@ -289,8 +290,8 @@
         // --- Xử lý Xác thực bằng Khuôn mặt ---
         loginFaceBtn.addEventListener('click', async () => {
             showNotification("Đang tìm kiếm khuôn mặt của bạn...");
-            const descriptor = await getFaceDescriptorFromCamera("Nhìn thẳng vào camera để đăng nhập");
-            if (!descriptor) return;
+            const scannedDescriptor = await getFaceDescriptorFromCamera("Nhìn thẳng vào camera để đăng nhập");
+            if (!scannedDescriptor) return;
 
             const faceUsersRef = collection(db, 'artifacts', appId, 'public', 'data', 'face_users');
             const querySnapshot = await getDocs(faceUsersRef);
@@ -309,13 +310,21 @@
             });
 
             const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.5);
-            const bestMatch = faceMatcher.findBestMatch(descriptor);
+            const bestMatch = faceMatcher.findBestMatch(scannedDescriptor);
 
             if (bestMatch.label !== 'unknown') {
                 currentUserId = bestMatch.label;
-                encryptionKey = generateKeyFromDescriptor(descriptor); // Tạo khóa bí mật
-                showNotification(`Đăng nhập thành công!`);
-                switchToAppScreen();
+                
+                // FIX: Lấy descriptor gốc từ LabeledFaceDescriptors để tạo khóa nhất quán
+                const matchedData = labeledFaceDescriptors.find(ld => ld.label === currentUserId);
+                if (matchedData) {
+                    loggedInUserOriginalDescriptor = matchedData.descriptors[0];
+                    encryptionKey = generateKeyFromDescriptor(loggedInUserOriginalDescriptor);
+                    showNotification(`Đăng nhập thành công!`);
+                    switchToAppScreen();
+                } else {
+                     showNotification("Lỗi: Không tìm thấy dữ liệu người dùng gốc.", true);
+                }
             } else {
                 showNotification("Không nhận dạng được khuôn mặt. Vui lòng thử lại hoặc đăng ký.", true);
             }
@@ -341,14 +350,15 @@
                 const newUserDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'face_users', newUserId);
                 
                 try {
-                    // Chỉ lưu descriptor, không lưu khóa
                     await setDoc(newUserDocRef, {
                         userId: newUserId,
                         descriptor: Array.from(descriptor1) 
                     });
                     showNotification("Đăng ký thành công! Đang đăng nhập...");
                     currentUserId = newUserId;
-                    encryptionKey = generateKeyFromDescriptor(descriptor1); // Tạo khóa bí mật
+                    // FIX: Lưu descriptor gốc và tạo khóa từ nó
+                    loggedInUserOriginalDescriptor = descriptor1;
+                    encryptionKey = generateKeyFromDescriptor(loggedInUserOriginalDescriptor);
                     switchToAppScreen();
                 } catch (error) {
                     console.error("Lỗi lưu dữ liệu:", error);
@@ -361,7 +371,8 @@
 
         logoutBtn.addEventListener('click', () => {
             currentUserId = null;
-            encryptionKey = null; // Xóa khóa bí mật
+            encryptionKey = null; 
+            loggedInUserOriginalDescriptor = null; // FIX: Xóa descriptor gốc khi đăng xuất
             if (unsubscribeSnapshot) unsubscribeSnapshot();
             accountsList.innerHTML = '';
             switchToAuthScreen();
@@ -460,11 +471,15 @@
         }
 
         async function verifyFace() {
-            // Thay vì so sánh descriptor, chúng ta chỉ cần quét lại để tái tạo khóa
-            const descriptor = await getFaceDescriptorFromCamera("Xác nhận hành động bằng khuôn mặt của bạn.");
-            if (descriptor) {
-                const newKey = generateKeyFromDescriptor(descriptor);
-                if (newKey === encryptionKey) {
+            // FIX: So sánh với descriptor gốc thay vì so sánh khóa
+            if (!loggedInUserOriginalDescriptor) {
+                showNotification("Lỗi xác thực. Vui lòng đăng nhập lại.", true);
+                return false;
+            }
+            const scannedDescriptor = await getFaceDescriptorFromCamera("Xác nhận hành động bằng khuôn mặt của bạn.");
+            if (scannedDescriptor) {
+                const distance = faceapi.euclideanDistance(loggedInUserOriginalDescriptor, scannedDescriptor);
+                if (distance < 0.5) {
                     showNotification("Xác nhận khuôn mặt thành công!");
                     return true;
                 } else {
@@ -641,4 +656,4 @@
         }
     </script>
 </body>
-</html>
+</ht
